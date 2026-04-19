@@ -168,6 +168,34 @@ Flags:
   in this repo are not deleted.
 - `--yes` / `-y` — skip the interactive confirmation.
 
+### Muting windows and panes
+
+The `∅N` bucket in the badge is fed by tmux's `@recon-ignore` option.
+Three bindings toggle it at different scopes (not wired by
+`install_badges.sh` — the badge feature works without them; add them
+to your `.tmux.conf` if you want the UX convenience):
+
+| Key            | Scope   | Effect                                             |
+|----------------|---------|----------------------------------------------------|
+| `prefix + i`   | pane    | Mute one pane (siblings keep reporting)            |
+| `prefix + e`   | window  | Mute every pane in the window via inheritance      |
+| `prefix + I`   | picker  | fzf popup for session/window scope, non-focused    |
+
+```tmux
+bind-key i run-shell "/path/to/tmux-attic/recon_ignore_toggle.sh --pane"
+bind-key e run-shell "/path/to/tmux-attic/recon_ignore_toggle.sh --window"
+bind-key I display-popup -w 85% -h 75% -E "/path/to/tmux-attic/recon_ignore_picker.sh"
+```
+
+`prefix + i` and `prefix + e` call the same script with different
+`--scope` flags — one file, two bindings. `prefix + e` overrides
+`tmux-text-macros`' default `split-window` binding; pick a different
+key if you use the macro launcher.
+
+See [`KEYBINDINGS.md`](KEYBINDINGS.md) for the full project-wide
+binding reference (recon cycle, session lifecycle, vi-style pane
+navigation).
+
 ### Configuration
 
 | Option                          | Values                    | Default | Effect                                         |
