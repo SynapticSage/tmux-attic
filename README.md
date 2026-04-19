@@ -1,18 +1,32 @@
-# Tmux Session Manager (Extended)
+# tmux-curate
 
-> Fork of [PhilVoel/tmux-session-manager](https://github.com/PhilVoel/tmux-session-manager)
-> adding **window-level operations** and **session-lifecycle tools**
-> (browse / delete / rename with layout previews). Pairs naturally with
-> [Recon](https://github.com/anthropics/recon) for Claude Code workflows —
-> this plugin persists tmux state, Recon navigates live agents.
+> Curate your tmux sessions — save, browse, preview, rename, delete, and
+> move windows between sessions with layout previews at every destructive
+> step. Pairs with [Recon](https://github.com/anthropics/recon) for
+> navigating live Claude Code agents: `tmux-curate` persists state on
+> disk, Recon navigates processes in running panes.
 
-We all love tmux. But whenever you close a session (for instance, by restarting your system), you lose all the windows, panes and programs you had open.\
-The easy solution: Just save the entire tmux environment and restore it (that's what [tmux-resurrect](https://github.com/tmux-plugins/tmux-resurrect) does).\
-But what if you have multiple sessions that you use for multiple projects? What if you don't need all those sessions open at the same time? What if you don't *want* them open because your laptop is a decade old and you can't afford to start dozens of programs at once?\
-This plugin aims to solve that problem by only saving the session you are currently in as well as providing a fzf-based session switcher that allows you to not only switch between running sessions but also seamlessly restore a previously saved session and switch to it.\
-You can also archive sessions you'd like to keep but won't return to for a while. Archived sessions don't show up in the regular restore selection and can be unarchived whenever you're ready to open them again. If you won't need the session again, you can permanently delete it.
+Saving and restoring tmux sessions is a solved problem
+([tmux-resurrect](https://github.com/tmux-plugins/tmux-resurrect) does
+it well). The unsolved problem is what happens *after* you've been
+saving sessions for a few months: a folder of identically-shaped JSON
+blobs named after long-forgotten projects, each potentially holding
+live work you haven't thought about in weeks. The only way to remember
+what's in them is to restore each one — which kills your current state
+or spawns new sessions you didn't want.
 
-## New in This Fork: Session Lifecycle Tools
+`tmux-curate` treats saved sessions as first-class objects you can
+inspect in place. Every save carries its windows, panes, working
+directories, and running commands. A shared preview renderer shows the
+session's shape — window names, pane counts, per-pane cwds, save
+timestamp — in the same format whether you're browsing, deleting, or
+renaming. You decide before you act.
+
+Built on top of
+[PhilVoel/tmux-session-manager](https://github.com/PhilVoel/tmux-session-manager),
+with its save-file format preserved so existing saves load unchanged.
+
+## Session Lifecycle Tools
 
 Three read/mutate operations for managing saved sessions on disk,
 addressing the "I have a pile of saved sessions and don't remember what
@@ -41,9 +55,10 @@ warns if the target name matches a currently-running tmux session
 (future `save` would merge into the renamed files), shows the full
 rename plan (`old_base → new_base` for every file), then `y/N`.
 
-## New in This Fork: Window-Level Operations
+## Window-Level Operations
 
-This fork adds the ability to **move and load individual windows** between sessions:
+Move and load individual windows between sessions — useful when you want
+to reshape a session without killing its other work:
 
 ### Move Window (`prefix + C-w`)
 
@@ -80,13 +95,12 @@ Pull a window from **any** session (running or saved) into the current session:
 
 **Use case:** Unified interface to grab windows from anywhere - no need to remember if the source is running or saved.
 
-### Quick Setup
+## Quick Setup
 
 Add to your `.tmux.conf`:
 
 ```bash
-# Use this fork instead of the original
-set -g @plugin 'SynapticSage/tmux-session-manager'
+set -g @plugin 'SynapticSage/tmux-curate'
 
 # Lifecycle tools — not bound by default, opt in as you like
 set -g @session-manager-view-key   'C-v'
@@ -100,7 +114,7 @@ set -g @session-manager-rename-key 'C-n'
 # set -g @session-manager-pull-window-key       'C-p'
 ```
 
-### Commands Summary
+## Commands Summary
 
 | Key    | Command        | Description                                                    |
 |--------|----------------|----------------------------------------------------------------|
@@ -145,11 +159,11 @@ Recon ships with its own CLI commands (`recon view`, `recon next`,
 around those commands is user-scoped — build wrappers that match your
 own workflow rather than importing one-size-fits-all bindings.
 
-Originally just a fork of `tmux-resurrect`, this plugin has since been rewritten from scratch (although the inspiration is still obvious and I might have borrowed from them in a few places) to be a more compact codebase that I can more easily maintain and extend if necessary.
+## What Gets Saved
 
-## About
-
-This plugin tries to save the current session status as precisely as possible. Here's what's been taken care of:
+The save format is inherited from
+[PhilVoel/tmux-session-manager](https://github.com/PhilVoel/tmux-session-manager)
+(itself a compact rewrite of tmux-resurrect). Per-session files capture:
 
 - windows, panes and their layout
 - current working directory for each pane
@@ -172,7 +186,7 @@ This plugin tries to save the current session status as precisely as possible. H
 
 Add plugin to the list of TPM plugins in `.tmux.conf`:
 
-    set -g @plugin 'PhilVoel/tmux-session-manager'
+    set -g @plugin 'SynapticSage/tmux-curate'
 
 Hit `prefix + I` to install the plugin.
 
@@ -180,7 +194,7 @@ Hit `prefix + I` to install the plugin.
 
 Clone the repo:
 
-    $ git clone https://github.com/PhilVoel/tmux-session-manager ~/clone/path
+    $ git clone https://github.com/SynapticSage/tmux-curate ~/clone/path
 
 Add this line to your `.tmux.conf`:
 
@@ -190,7 +204,13 @@ Reload TMUX environment with `$ tmux source ~/.tmux.conf`.
 
 ### Nix/NixOS
 
-Beginning with release `25.11` this plugin is also available in `nixpkgs` as `tmuxPlugins.tmux-session-manager`.
+The upstream
+[PhilVoel/tmux-session-manager](https://github.com/PhilVoel/tmux-session-manager)
+is packaged in nixpkgs (release `25.11`+) as
+`tmuxPlugins.tmux-session-manager`. That package ships the upstream
+feature set only — it does not include tmux-curate's lifecycle tools.
+Use the manual-installation path above if you want the curate features
+on NixOS.
 
 ## Configuration
 
@@ -230,7 +250,14 @@ I'm always thankful for bug reports and new ideas. For details, check the [guide
 
 ## Credits
 
-As already stated, this plugin is heavily inspired by [tmux-resurrect](https://github.com/tmux-plugins/tmux-resurrect) and I've taken small liberties with some of their code while rewriting.
+`tmux-curate` builds on
+[PhilVoel/tmux-session-manager](https://github.com/PhilVoel/tmux-session-manager),
+which rewrote [tmux-resurrect](https://github.com/tmux-plugins/tmux-resurrect)
+into a more compact per-session-file codebase. The save-file format and
+the base save/restore/archive/unarchive operations come from that
+lineage. The window-level operations (move/load/pull) and the
+session-lifecycle tools (view/delete-with-preview/rename) are this
+fork's additions.
 
 ## License
 This software is licensed under [MIT](LICENSE.md).
