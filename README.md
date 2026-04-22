@@ -95,85 +95,26 @@ Pull a window from **any** session (running or saved) into the current session:
 
 **Use case:** Unified interface to grab windows from anywhere - no need to remember if the source is running or saved.
 
-## Per-Window Agent Status Badges (opt-in)
+## Per-Window Agent Status Badges
 
-When you're running many Claude Code sessions across tmux windows, it's
-easy to lose track of which ones are waiting on you, which are grinding
-away, and which are idle. `tmux-attic` ships an opt-in system that
-appends per-window badges to `window-status-format`, so the tmux status
-bar shows at a glance what's happening across every window.
+The badge system that used to ship alongside the attic has been
+extracted into its own TPM plugin:
+**[SynapticSage/tmux-agent-tracker](https://github.com/SynapticSage/tmux-agent-tracker)**.
 
-```
-  main:1 obsidian    💤2        ← 2 idle Claude sessions
-  main:2 mlx-audio   ⚙1         ← 1 actively working
-  main:3 gtd         ⌨1 💤1     ← 1 waiting for input, 1 idle
-  main:4 sec         ✓1 ∅2      ← 1 finished-unseen, 2 muted via @recon-ignore
-  main:5 new-proj    ✳1         ← 1 freshly spawned
+```tmux
+set -g @plugin 'SynapticSage/tmux-agent-tracker'
 ```
 
-### Symbol legend
-
-| Symbol | State        | Meaning                              | Color       |
-|--------|--------------|--------------------------------------|-------------|
-| `⌨N`   | needs-input  | User action required (prompt-gate)   | yellow bold |
-| `⚙N`   | working      | Claude is computing a response       | cyan bold   |
-| `✳N`   | new          | Session freshly spawned              | magenta bold|
-| `✓N`   | done         | Finished response you haven't seen   | green bold  |
-| `💤N`  | idle         | Sitting at prompt, no active work    | bright white|
-| `∅N`   | ignored      | Marked via `@recon-ignore` (muted)   | mid-gray    |
-
-### How it works
-
-Two complementary signal sources, merged by priority per pane:
-
-- **Event-driven** — `hook_agent_state.sh` runs from Claude Code hooks
-  (`UserPromptSubmit`, `PermissionRequest`, `Stop`) and writes state
-  into a tmux global env var. Latency: ~10 ms per state change.
-- **Polling** — if [`recon`](https://github.com/anthropics/recon) is
-  installed, a provider calls `recon json` on a configurable interval
-  (default 5 s) to catch sessions that missed a hook event (crashes,
-  SIGKILL, sessions pre-dating hook installation).
-
-The renderer (`window_badge.sh`) is called by tmux once per window on
-every status redraw. It reads a merged cache file, never the raw
-signal sources — so rendering stays fast even on status-interval 1.
-Details and the provider-addition contract live in
-[`CLAUDE.md`](CLAUDE.md).
-
-### Installation
-
-```sh
-./install_badges.sh
-```
-
-Runs the installer interactively. It:
-
-1. Appends a managed block to `~/.tmux.conf` wiring `window_badge.sh`
-   into `window-status-format` and `window-status-current-format`.
-2. Adds four hook entries to `~/.claude/settings.json` calling
-   `hook_agent_state.sh` on `UserPromptSubmit` / `PermissionRequest`
-   / `Stop` lifecycle events.
-3. Reloads your tmux config so badges appear immediately.
-
-Before modifying either file, it writes a timestamped `.bak.<stamp>`
-next to the original. The block is bounded by sentinel comments
-(`# >>> tmux-attic badges >>>` / `# <<< tmux-attic badges <<<`) so
-reruns are idempotent.
-
-Flags:
-
-- `--dry-run` — preview every change without touching disk.
-- `--uninstall` — strip the managed block from `~/.tmux.conf` and
-  remove the hook entries from `~/.claude/settings.json`. Scripts
-  in this repo are not deleted.
-- `--yes` / `-y` — skip the interactive confirmation.
+Muting windows via `@recon-ignore` is still driven from this repo —
+the badge plugin's `30-tmux-ignore.sh` provider reads the
+`@recon-ignore` option that the toggles below flip. The two
+repositories are intentionally decoupled: the attic handles
+persistence and recon-ignore UX; tmux-agent-tracker handles the
+live status-bar rendering. Use either or both.
 
 ### Muting windows and panes
 
-The `∅N` bucket in the badge is fed by tmux's `@recon-ignore` option.
-Three bindings toggle it at different scopes (not wired by
-`install_badges.sh` — the badge feature works without them; add them
-to your `.tmux.conf` if you want the UX convenience):
+Three bindings toggle `@recon-ignore` at different scopes:
 
 | Key            | Scope   | Effect                                             |
 |----------------|---------|----------------------------------------------------|
@@ -187,34 +128,11 @@ bind-key e run-shell "/path/to/tmux-attic/recon_ignore_toggle.sh --window"
 bind-key I display-popup -w 85% -h 75% -E "/path/to/tmux-attic/recon_ignore_picker.sh"
 ```
 
-`prefix + i` and `prefix + e` call the same script with different
-`--scope` flags — one file, two bindings. `prefix + e` overrides
-`tmux-text-macros`' default `split-window` binding; pick a different
-key if you use the macro launcher.
+`prefix + e` overrides `tmux-text-macros`' default `split-window`
+binding; pick a different key if you use the macro launcher.
 
 See [`KEYBINDINGS.md`](KEYBINDINGS.md) for the full project-wide
-binding reference (recon cycle, session lifecycle, vi-style pane
-navigation).
-
-### Configuration
-
-| Option                          | Values                    | Default | Effect                                         |
-|---------------------------------|---------------------------|---------|------------------------------------------------|
-| `@window-badge-mode`            | `counts`, `worst`, `off`  | `counts`| Render one symbol+count per state, only the highest-priority state, or disable badges entirely. |
-| `@window-badge-poll-interval`   | integer seconds           | `5`     | Maximum age of the cache before the renderer triggers an async refresh on next redraw. |
-
-Set with `tmux set-option -g @window-badge-mode worst`; takes effect
-on the next status redraw, no reload required.
-
-### Extending with a new signal source
-
-Any executable in `window_badge_providers/` that emits TSV lines
-of the form `<pane_id>\t<state>\t<ignored>` to stdout is a valid
-provider. Drop one in, and the merger picks it up on the next
-refresh cycle — no core-code changes. The priority table (in
-`window_badge_refresh.sh`) ranks `needs-input > working > new >
-done > idle > none`; ignored flags from any provider OR together.
-Full contract in [`CLAUDE.md`](CLAUDE.md).
+binding reference.
 
 ## Quick Setup
 
