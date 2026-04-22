@@ -40,60 +40,6 @@ Configurable (not bound by default):
 
 ---
 
-## Recon (Claude Code session dashboard)
-
-Recon scans the tmux server for live Claude Code sessions and groups them
-by project. The cycle scripts live in `/Users/ryoung/Code/repos/tmux-manage/`.
-
-- **`Prefix + g`** — Cycle to next non-Working agent (Idle **or**
-  waiting-for-input). Sorts waiting-first, so if anything is waiting you
-  land there on the first press. Skips panes marked with `@recon-ignore`.
-- **`Prefix + C-g`** — Cycle only through agents waiting for input.
-  Narrow variant of `g`. Shows `"no agents waiting for input"` in the
-  status bar when nothing is waiting. Skips ignored panes.
-- **`Prefix + G`** — Open the full Recon dashboard (table view) in a 90%
-  popup.
-- **`Prefix + i`** — Toggle `@recon-ignore` on the **current pane**.
-  Silences just that one pane — other agents in the same window keep
-  contributing to badge counts and the recon cycle. Overrides tmux
-  default `display-message`, which duplicated status-bar info anyway.
-- **`Prefix + e`** — Toggle `@recon-ignore` on the **current window**.
-  Silences every pane in the window at once via tmux's pane → window
-  → session inheritance — all agents inside the window stop
-  contributing to badges, and the recon cycle skips them. Overrides
-  tmux-text-macros' `split-window` binding; launch text macros via
-  their script directly if you use them.
-- **`Prefix + I`** — Open fzf popup to toggle `@recon-ignore` at
-  **session** or **window** scope for a non-focused target. Overrides
-  TPM's plugin-install hotkey; see *Manual TPM Invocation* below for
-  replacements.
-
-Both `i` and `e` call `recon_ignore_toggle.sh` under different
-`--pane` / `--window` flags, so the scope logic lives in one place.
-
-### How `@recon-ignore` inheritance works
-
-tmux resolves user options through the scope chain `pane → window →
-session → global`, returning the first set value. So:
-
-- Setting the option at a session affects every pane in every window of
-  that session (unless a leaf scope explicitly sets `off` to override).
-- Unsetting at a leaf does not "lift" a parent's ignore — to un-ignore a
-  window whose session is marked, unmark the session.
-
----
-
-## Manual TPM Invocation
-
-`Prefix + I` is taken by the recon ignore picker, so these commands
-replace TPM's plugin-management hotkeys. Run from any shell:
-
-- `~/.tmux/plugins/tpm/bin/install_plugins` — install new `@plugin` lines
-- `~/.tmux/plugins/tpm/bin/update_plugins all` — update all installed plugins
-- `~/.tmux/plugins/tpm/bin/clean_plugins` — remove plugins no longer listed
-
----
-
 ## Vi-style Pane Navigation (custom)
 
 From `~/.tmux.conf` — vi-style movement instead of tmux defaults for
@@ -127,8 +73,9 @@ pane selection and resizing.
 
 These come with their plugins. Listed for completeness:
 
-- **tmux-sessionist** — `Prefix + g` (originally — now overridden by
-  recon), `Prefix + C / X / S / @ / .` for session create/kill/switch/
+- **tmux-sessionist** — `Prefix + g` (if you also install
+  tmux-agent-tracker, `g` is taken by the recon cycle there),
+  `Prefix + C / X / S / @ / .` for session create/kill/switch/
   promote/rename. Check plugin docs for full list.
 - **tmux-resurrect** — `Prefix + C-s` / `Prefix + C-r` (conflicts with
   session-manager; session-manager's bindings win because they're
@@ -144,7 +91,6 @@ These come with their plugins. Listed for completeness:
 
 ## Customization Hints
 
-- All recon wrapper scripts live at `/Users/ryoung/Code/repos/tmux-manage/recon_*.sh`.
 - All session-manager operations use `@session-manager-*-key` tmux
   options — override these before TPM runs to change bindings.
 - Setting a session-manager key option with `set -g @session-manager-X-key ''`

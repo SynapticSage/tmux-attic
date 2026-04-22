@@ -2,9 +2,7 @@
 
 > Curate your tmux sessions — save, browse, preview, rename, delete, and
 > move windows between sessions with layout previews at every destructive
-> step. Pairs with [Recon](https://github.com/anthropics/recon) for
-> navigating live Claude Code agents: `tmux-attic` persists state on
-> disk, Recon navigates processes in running panes.
+> step.
 
 Saving and restoring tmux sessions is a solved problem
 ([tmux-resurrect](https://github.com/tmux-plugins/tmux-resurrect) does
@@ -95,53 +93,16 @@ Pull a window from **any** session (running or saved) into the current session:
 
 **Use case:** Unified interface to grab windows from anywhere - no need to remember if the source is running or saved.
 
-## Per-Window Agent Status Badges
+## See also
 
-The badge system that used to ship alongside the attic has been
-extracted into its own TPM plugin:
-**[SynapticSage/tmux-agent-tracker](https://github.com/SynapticSage/tmux-agent-tracker)**.
+`tmux-attic` is a pure tmux session curator. Anything agent-aware
+(live Claude / Codex state in the status bar, per-pane marks,
+`@recon-ignore` toggles, recon cycling) lives in a sibling plugin:
 
-```tmux
-set -g @plugin 'SynapticSage/tmux-agent-tracker'
-```
+**[SynapticSage/tmux-agent-tracker](https://github.com/SynapticSage/tmux-agent-tracker)**
 
-That plugin covers:
-
-- **Per-window state badges** — `⌨ ⚙ ✳ ✓ 💤 ∅` symbols + counts,
-  event-driven via Claude Code hooks and polled via `recon` / `codex`.
-- **Per-pane marks** — tag individual Claude/Codex panes with a short
-  label (1-6 chars) or an emoji. `prefix + m` opens a popup; Ctrl-E
-  switches to an fzf-based emoji picker. Marked panes render
-  individually alongside the aggregated counts for unmarked panes.
-
-Muting windows via `@recon-ignore` is still driven from this repo —
-the badge plugin's `30-tmux-ignore.sh` provider reads the
-`@recon-ignore` option that the toggles below flip. The two
-repositories are intentionally decoupled: the attic handles
-persistence and recon-ignore UX; tmux-agent-tracker handles the
-live status-bar rendering. Use either or both.
-
-### Muting windows and panes
-
-Three bindings toggle `@recon-ignore` at different scopes:
-
-| Key            | Scope   | Effect                                             |
-|----------------|---------|----------------------------------------------------|
-| `prefix + i`   | pane    | Mute one pane (siblings keep reporting)            |
-| `prefix + e`   | window  | Mute every pane in the window via inheritance      |
-| `prefix + I`   | picker  | fzf popup for session/window scope, non-focused    |
-
-```tmux
-bind-key i run-shell "/path/to/tmux-attic/recon_ignore_toggle.sh --pane"
-bind-key e run-shell "/path/to/tmux-attic/recon_ignore_toggle.sh --window"
-bind-key I display-popup -w 85% -h 75% -E "/path/to/tmux-attic/recon_ignore_picker.sh"
-```
-
-`prefix + e` overrides `tmux-text-macros`' default `split-window`
-binding; pick a different key if you use the macro launcher.
-
-See [`KEYBINDINGS.md`](KEYBINDINGS.md) for the full project-wide
-binding reference.
+The two are designed to coexist — install either or both, nothing
+overlaps.
 
 ## Quick Setup
 
@@ -178,35 +139,6 @@ set -g @session-manager-rename-key 'C-n'
 Reload tmux: `tmux source ~/.tmux.conf` and press `prefix + I` to
 install.
 
-## Pairing with Recon for Claude Code Sessions
-
-[Recon](https://github.com/anthropics/recon) is a Rust TUI for managing
-live Claude Code agents running inside tmux. The two tools cover
-complementary axes:
-
-| Concern                                         | Tool         |
-|-------------------------------------------------|--------------|
-| Save / restore tmux state                       | This plugin  |
-| Delete / rename / browse saved sessions         | This plugin  |
-| Dashboard of currently-running Claude agents    | `recon` / `recon view` |
-| Jump to next agent waiting for input            | `recon next` |
-
-A typical Claude Code workflow leans on both:
-
-1. Spin up agents across multiple tmux windows as usual.
-2. Bind Recon's commands to keys you'll actually use —
-   `display-popup -E 'recon'` for the dashboard, `run-shell 'recon next'`
-   to jump between agents.
-3. When you want to step away, `prefix + C-s` saves the tmux layout;
-   Recon's own `park` / `unpark` subcommands handle agent-side state.
-4. Coming back later, `prefix + C-v` lets you browse saved tmux sessions
-   to pick the one matching the project you want to continue.
-
-Recon ships with its own CLI commands (`recon view`, `recon next`,
-`recon resume`, `recon park`, etc.). The authoring of tmux keybindings
-around those commands is user-scoped — build wrappers that match your
-own workflow rather than importing one-size-fits-all bindings.
-
 ## What Gets Saved
 
 The save format is inherited from
@@ -232,70 +164,6 @@ back to `/proc` reads only for the NixOS Neovim-wrapper special case
 (which genuinely needs argv separation that `ps` flattens). Arg
 boundaries are lossy for args with embedded spaces — a known
 limitation worth flagging, but rare in typical agent invocations.
-
-### Agent-aware session restoration
-
-Naïvely re-running the captured command for a Claude or Codex pane
-spawns a **new** conversation rather than continuing the one that was
-live at save time. When saving, this fork rewrites claude and codex
-invocations so the restored pane resumes the running session:
-
-| Captured command                                         | Saved (rewritten) form                |
-|----------------------------------------------------------|---------------------------------------|
-| `claude`                                                 | `claude --continue`                   |
-| `claude --dangerously-skip-permissions`                  | `claude --continue --dangerously-skip-permissions` |
-| `claude --resume <id>` (conflicting flag stripped)       | `claude --continue`                   |
-| `codex -m gpt-5.4`                                       | `codex resume --last -m gpt-5.4`      |
-| `npm exec @openai/codex@latest -m gpt-5.4`               | `codex resume --last -m gpt-5.4`      |
-| `node /path/to/codex -m gpt-5.4`                         | `codex resume --last -m gpt-5.4`      |
-| `/abs/path/.../codex/codex -m gpt-5.4`                   | `codex resume --last -m gpt-5.4`      |
-
-For Claude, the rewriter also looks up the specific `session_id` per
-pane via a one-shot `recon json` call at save time. When recon knows
-the pane's session, the saved command becomes
-`claude --resume <uuid> [preserved flags]` instead of
-`claude --continue`. This matters when you run multiple Claude
-sessions in the same directory: `--continue` picks whichever is
-most-recent and collapses all restored panes onto one conversation;
-`--resume <uuid>` restores each pane to its own session.
-
-If recon isn't installed or hasn't observed the pane yet, the
-rewriter falls back to `--continue`. Either way, `pane_current_path`
-is still captured so cwd-based resolution works as a safety net.
-
-Codex's `resume --last` is still cwd-based because Codex has no hook
-API and no per-pane session observer equivalent to recon — we can't
-correlate pane → session ID without writing a dedicated observer
-(parse `~/.codex/history.jsonl` plus process-tree + start-time
-heuristics). For single-codex-per-cwd workflows `--last` is fine;
-multi-codex precision is a future enhancement.
-
-The rewriter lives in `rewrite_agent_command` (see
-`common_utils.sh`) — unit tests worth 16 input patterns live inline
-in that file's header comment. Non-agent commands pass through
-unchanged.
-
-### Caveat: tmux-continuum / tmux-resurrect auto-save
-
-This fork's augmented save runs only when the user triggers it
-(`prefix + C-s` by default). If you also use
-[`tmux-continuum`](https://github.com/tmux-plugins/tmux-continuum)
-for its 15-minute auto-save loop, those saves are made by
-`tmux-resurrect` into a separate directory
-(`~/.local/share/tmux/resurrect/`) and do **not** go through this
-agent-aware logic — a resurrect-driven restore will re-launch
-`claude` / `codex` as fresh sessions.
-
-Options:
-
-- Save manually (`prefix + C-s`) before any detach you care about —
-  the augmented save file wins on restore since it lives under
-  `~/.local/share/tmux/sessions/` and this repo's bindings override
-  resurrect's.
-- If you want continuum's cadence with agent-aware capture, Path B
-  in the roadmap (drop-in `@resurrect-strategy-claude` and
-  `@resurrect-strategy-codex` scripts that integrate with resurrect's
-  hook system) would give you both.
 
 ## Dependencies
 

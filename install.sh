@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
-# install.sh — full tmux-attic wiring + Claude-capability dependencies.
+# install.sh — tmux-attic wiring into ~/.tmux.conf.
 #
-# Does three things, all idempotent:
-#   1. Wires session_manager.tmux into ~/.tmux.conf (opt-in key options
-#      + run-shell). run-shell lands AFTER `run '~/.tmux/plugins/tpm/tpm'`
-#      if TPM is present, so attic's bindings override TPM plugins.
-#   2. Runs install_claude_deps.sh (recon, badges, ignore bindings).
-#   3. Reloads the tmux config if a server is running.
+# Does two things, both idempotent:
+#   1. Appends a managed options block with opt-in key bindings
+#      (view, delete, rename).
+#   2. Appends a run-shell line that sources session_manager.tmux —
+#      placed AFTER `run '~/.tmux/plugins/tpm/tpm'` if TPM is wired,
+#      so attic's bindings override plugin-provided defaults.
+#
+# TPM users don't need this — `set -g @plugin 'SynapticSage/tmux-attic'`
+# in ~/.tmux.conf is sufficient. This script is for non-TPM setups
+# that want a single-command install.
 #
 # Flags:
-#   --skip-tmux-wire   don't touch tmux.conf (wire step)
-#   --skip-deps        don't run install_claude_deps.sh
-#   --skip-recon       pass --skip-recon to install_claude_deps.sh
-#   --skip-badges      pass --skip-badges to install_claude_deps.sh
-#   --skip-bindings    pass --skip-bindings to install_claude_deps.sh
+#   --skip-tmux-wire   don't touch tmux.conf (pointless alone, kept for
+#                      orchestration by wrapper scripts)
 #   --dry-run          preview everything, touch nothing
-#   --uninstall        strip managed blocks from tmux.conf, no deps changes
+#   --uninstall        strip managed blocks from tmux.conf
+#   --force            append even if stray unmanaged attic lines exist
 #   -h|--help          this help
 
 set -euo pipefail
@@ -29,8 +31,6 @@ RUN_BEGIN="# >>> tmux-attic run-shell >>>"
 RUN_END="# <<< tmux-attic run-shell <<<"
 
 SKIP_TMUX_WIRE=0
-SKIP_DEPS=0
-DEPS_FLAGS=()
 DRY_RUN=0
 UNINSTALL=0
 FORCE=0
@@ -40,13 +40,9 @@ usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; }
 for arg in "$@"; do
   case "$arg" in
     --skip-tmux-wire) SKIP_TMUX_WIRE=1 ;;
-    --skip-deps) SKIP_DEPS=1 ;;
-    --skip-recon) DEPS_FLAGS+=(--skip-recon) ;;
-    --skip-badges) DEPS_FLAGS+=(--skip-badges) ;;
-    --skip-bindings) DEPS_FLAGS+=(--skip-bindings) ;;
-    --dry-run) DRY_RUN=1; DEPS_FLAGS+=(--dry-run) ;;
+    --dry-run) DRY_RUN=1 ;;
     --uninstall) UNINSTALL=1 ;;
-    --force) FORCE=1; DEPS_FLAGS+=(--force) ;;
+    --force) FORCE=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown flag: $arg" >&2; usage >&2; exit 2 ;;
   esac
@@ -81,9 +77,8 @@ strip_block() {
 }
 
 detect_stray_attic() {
-  # Find attic-shaped lines OUTSIDE managed sentinel blocks. Returns the
-  # offending line numbers on stdout. Used to block double-installs when a
-  # user previously hand-wired attic before sentinels existed.
+  # Find attic-shaped lines OUTSIDE managed sentinel blocks. Used to
+  # block double-installs when a user previously hand-wired attic.
   local file="$1"
   awk -v ob="$OPTS_BEGIN" -v oe="$OPTS_END" -v rb="$RUN_BEGIN" -v re="$RUN_END" '
     $0 == ob || $0 == rb { inblock=1; next }
@@ -109,7 +104,6 @@ wire_tmux() {
   local conf; conf="$(target_conf)"
   log "wiring tmux-attic into $conf"
 
-  # Guard against duplicate wiring from pre-sentinel hand-edits.
   local stray; stray="$(detect_stray_attic "$conf")"
   if [[ -n "$stray" ]]; then
     log "found attic-shaped lines OUTSIDE managed sentinel blocks:"
@@ -149,7 +143,7 @@ EOF
   run_block="$(cat <<EOF
 $RUN_BEGIN
 # Managed by tmux-attic install.sh. Placed after TPM init so attic bindings
-# win over plugin-provided defaults (e.g. tmux-copycat's prefix+C-d).
+# win over plugin-provided defaults.
 run-shell '$SCRIPT_DIR/session_manager.tmux'
 $RUN_END
 EOF
@@ -165,14 +159,12 @@ EOF
 
   (( ! had_block )) && backup_once "$conf"
 
-  # Append options block at end of file (tmux settings are position-independent
-  # until run-shell fires, so end-of-file is simplest and robust).
   printf '\n%s\n' "$opts_block" >> "$conf"
 
   # run-shell MUST come after TPM init so attic's bindings override plugin
-  # defaults (e.g. tmux-copycat's prefix+C-d). If TPM init is mid-file,
-  # appending to EOF lands us in the wrong order. Detect the TPM line and
-  # insert directly after it; fall back to EOF only when TPM isn't wired.
+  # defaults. If TPM init is mid-file, EOF-append lands us in the wrong
+  # order — detect the TPM line and insert directly after it; fall back
+  # to EOF only when TPM isn't wired.
   if grep -Eq "^[[:space:]]*run(-shell)?[[:space:]]+['\"]?[^'\"]*tpm/tpm['\"]?" "$conf"; then
     local tmp; tmp="$(mktemp)"
     awk -v block="$run_block" '
@@ -201,7 +193,7 @@ uninstall_tmux() {
   backup_once "$conf"
   strip_block "$conf" "$OPTS_BEGIN" "$OPTS_END"
   strip_block "$conf" "$RUN_BEGIN" "$RUN_END"
-  log "managed blocks stripped (dep-level hooks/bindings untouched — use install_badges.sh --uninstall for those)"
+  log "managed blocks stripped"
 }
 
 reload_tmux() {
@@ -214,17 +206,12 @@ reload_tmux() {
   tmux source-file "$TMUX_CONF" && log "reloaded tmux config" || log "tmux source-file failed"
 }
 
-# Non-invasive end-to-end check: did the install actually take effect?
-# Runs only when a tmux server is up; otherwise prints next-steps. Each
-# probe is a single line so it's easy to scan a successful install at a
-# glance and equally easy to spot which signal didn't light up.
 smoke_test() {
   (( DRY_RUN )) && { log "  (dry-run) skipping smoke test"; return 0; }
   command -v tmux >/dev/null 2>&1 || return 0
   if ! tmux info >/dev/null 2>&1; then
     log "smoke test skipped — no tmux server. Start tmux, then check:"
-    log "  - badge appears beside each window name in the status bar"
-    log "  - prefix+i mutes current pane; prefix+C-v opens session viewer"
+    log "  - prefix+C-v opens session viewer, prefix+C-s saves, etc."
     return 0
   fi
   log "smoke test:"
@@ -238,26 +225,18 @@ smoke_test() {
   else
     log "  ~ session-manager keybindings not visible (may bind on first prefix press)"
   fi
-  if command -v recon >/dev/null 2>&1 && recon json >/dev/null 2>&1; then
-    log "  ✓ recon installed and responding"
-  else
-    log "  ~ recon unavailable — badges still work via Claude hooks alone"
-  fi
 }
 
 main() {
   if (( UNINSTALL )); then
     uninstall_tmux
     reload_tmux
-    log "uninstall complete (run ./install_badges.sh --uninstall to remove badges/hooks)"
+    log "uninstall complete"
     exit 0
   fi
 
   local rc=0
   if (( ! SKIP_TMUX_WIRE )); then wire_tmux || rc=$?; fi
-  if (( ! SKIP_DEPS )); then
-    "$SCRIPT_DIR/install_claude_deps.sh" "${DEPS_FLAGS[@]}" || rc=$?
-  fi
   reload_tmux
   smoke_test
 
