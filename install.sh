@@ -168,10 +168,26 @@ EOF
   # Append options block at end of file (tmux settings are position-independent
   # until run-shell fires, so end-of-file is simplest and robust).
   printf '\n%s\n' "$opts_block" >> "$conf"
-  # run-shell MUST come after TPM init to override plugin bindings. Since we
-  # append to EOF and TPM's `run '~/.tmux/plugins/tpm/tpm'` is conventionally
-  # near the end, appending after works.
-  printf '\n%s\n' "$run_block" >> "$conf"
+
+  # run-shell MUST come after TPM init so attic's bindings override plugin
+  # defaults (e.g. tmux-copycat's prefix+C-d). If TPM init is mid-file,
+  # appending to EOF lands us in the wrong order. Detect the TPM line and
+  # insert directly after it; fall back to EOF only when TPM isn't wired.
+  if grep -Eq "^[[:space:]]*run(-shell)?[[:space:]]+['\"]?[^'\"]*tpm/tpm['\"]?" "$conf"; then
+    local tmp; tmp="$(mktemp)"
+    awk -v block="$run_block" '
+      { print }
+      !inserted && /^[[:space:]]*run(-shell)?[[:space:]]+['\''"]?[^'\''"]*tpm\/tpm['\''"]?/ {
+        print ""
+        print block
+        inserted = 1
+      }
+    ' "$conf" > "$tmp" && mv "$tmp" "$conf"
+    log "run-shell inserted after TPM init"
+  else
+    printf '\n%s\n' "$run_block" >> "$conf"
+    log "no TPM init line found — run-shell appended to EOF"
+  fi
 
   log "tmux.conf wired"
 }
@@ -198,6 +214,37 @@ reload_tmux() {
   tmux source-file "$TMUX_CONF" && log "reloaded tmux config" || log "tmux source-file failed"
 }
 
+# Non-invasive end-to-end check: did the install actually take effect?
+# Runs only when a tmux server is up; otherwise prints next-steps. Each
+# probe is a single line so it's easy to scan a successful install at a
+# glance and equally easy to spot which signal didn't light up.
+smoke_test() {
+  (( DRY_RUN )) && { log "  (dry-run) skipping smoke test"; return 0; }
+  command -v tmux >/dev/null 2>&1 || return 0
+  if ! tmux info >/dev/null 2>&1; then
+    log "smoke test skipped — no tmux server. Start tmux, then check:"
+    log "  - badge appears beside each window name in the status bar"
+    log "  - prefix+i mutes current pane; prefix+C-v opens session viewer"
+    return 0
+  fi
+  log "smoke test:"
+  if tmux show-options -gqv @session-manager-view-key | grep -q .; then
+    log "  ✓ session-manager options registered"
+  else
+    log "  ✗ session-manager options NOT registered (run-shell may not have fired)"
+  fi
+  if tmux list-keys 2>/dev/null | grep -q session_manager.tmux; then
+    log "  ✓ session-manager keybindings present"
+  else
+    log "  ~ session-manager keybindings not visible (may bind on first prefix press)"
+  fi
+  if command -v recon >/dev/null 2>&1 && recon json >/dev/null 2>&1; then
+    log "  ✓ recon installed and responding"
+  else
+    log "  ~ recon unavailable — badges still work via Claude hooks alone"
+  fi
+}
+
 main() {
   if (( UNINSTALL )); then
     uninstall_tmux
@@ -212,6 +259,7 @@ main() {
     "$SCRIPT_DIR/install_claude_deps.sh" "${DEPS_FLAGS[@]}" || rc=$?
   fi
   reload_tmux
+  smoke_test
 
   if (( rc == 0 )); then log "done"; else log "finished with non-zero status ($rc)"; fi
   return $rc
