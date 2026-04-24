@@ -15,3 +15,6 @@ move_memini_to_vocal_diary.sh
 tmux-claude-tools.md
 tmux-claude-tools.pdf
 tmux-pane-addressing.md
+
+# Codex skill state (pane ID, session ID, transient prompts)
+.context/
