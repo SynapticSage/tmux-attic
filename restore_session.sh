@@ -4,6 +4,9 @@ source common_utils.sh
 
 get_all_sessions() {
 	for file in "$SAVE_DIR"/*_last; do
+		# Skip dangling symlinks and the literal-glob no-match case so the
+		# picker can't offer entries that exec < would later fail to open.
+		[[ -e "$file" ]] || continue
 		if [[ "$(basename "${file%%_last}")" != "$CURRENT_SESSION" ]]; then
 			basename "${file%%_last}"
 		fi
@@ -18,6 +21,7 @@ get_all_sessions() {
 
 get_archived_sessions() {
 	for file in "$SAVE_DIR/"*_last_archived; do
+		[[ -e "$file" ]] || continue
 		basename "${file%%_last_archived}"
 	done
 }

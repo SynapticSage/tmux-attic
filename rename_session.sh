@@ -114,8 +114,25 @@ read -r -p "Proceed? [y/N] " response
 case "$response" in
 	[yY]|[yY][eE][sS])
 		start_spinner "Renaming session"
+		# Two passes so symlink targets exist at their new paths before
+		# we re-link. Pass 1: regular files. Pass 2: symlinks, recreated
+		# with rewritten targets — `mv` on a symlink renames the link
+		# but leaves its stored target text untouched, which is how
+		# DnD_last got left pointing at the pre-rename `3_<timestamp>`
+		# file and broke restore_session.sh.
 		for i in "${!old_paths[@]}"; do
+			[[ -L "${old_paths[$i]}" ]] && continue
 			mv -- "${old_paths[$i]}" "${new_paths[$i]}"
+		done
+		for i in "${!old_paths[@]}"; do
+			[[ -L "${old_paths[$i]}" ]] || continue
+			old_target=$(readlink -- "${old_paths[$i]}")
+			old_target_base=$(basename -- "$old_target")
+			old_target_dir=$(dirname  -- "$old_target")
+			new_target_base="${new_name}${old_target_base:${#old_name}}"
+			new_target="$old_target_dir/$new_target_base"
+			rm -- "${old_paths[$i]}"
+			ln -s -- "$new_target" "${new_paths[$i]}"
 		done
 		stop_spinner "Session renamed: $old_name -> $new_name"
 		;;
