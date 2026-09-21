@@ -26,17 +26,17 @@ get_tmux_option() {
 	fi
 }
 
-# Get the save directory from the tmux options and expand $HOME.
-SAVE_DIR=$(get_tmux_option "@session-manager-save-dir" "${HOME}/.local/share/tmux/sessions" | sed "s,\$HOME,$HOME,g; s,\~,$HOME,g")
+# Get the save directory from the tmux options and expand $HOME. An explicit
+# TMUX_SESSION_MANAGER_SAVE_DIR env override wins — used so a programmatic caller
+# (e.g. the tmux-reorg skill under test) can redirect the store to a throwaway
+# location instead of the real one.
+if [ -n "${TMUX_SESSION_MANAGER_SAVE_DIR:-}" ]; then
+	SAVE_DIR="$TMUX_SESSION_MANAGER_SAVE_DIR"
+else
+	SAVE_DIR=$(get_tmux_option "@session-manager-save-dir" "${HOME}/.local/share/tmux/sessions" | sed "s,\$HOME,$HOME,g; s,\~,$HOME,g")
+fi
 mkdir -p "$SAVE_DIR"
 export SAVE_DIR
-
-# Get the path for the new save file.
-NEW_SAVE_FILE="${SAVE_DIR}/${CURRENT_SESSION}_$(date +"%Y-%m-%dT%H:%M:%S")"
-export NEW_SAVE_FILE
-
-# Get the path for the last save file for this session.
-export LAST_SAVE_FILE="${SAVE_DIR}/${CURRENT_SESSION}_last"
 
 new_spinner() {
 	local current=0
